@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "Move Plus — 自分のリズムを記録する",
+  "short_name": "Move Plus",
+  "description": "運動と体調を自分のペースで記録するアプリ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f3f2eb",
+  "theme_color": "#f3f2eb",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

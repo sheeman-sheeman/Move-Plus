@@ -1,4 +1,4 @@
-const CACHE_NAME = 'move-plus-shell-v2';
+const CACHE_NAME = 'move-plus-shell-v3';
 const APP_FILES = ['./', './index.html', './style.css', './script.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {
@@ -12,11 +12,17 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
-  event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => {
-    if (response.ok) {
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+  event.respondWith((async () => {
+    try {
+      const response = await fetch(request);
+      if (response.ok) {
+        const cache = await caches.open(CACHE_NAME);
+        await cache.put(request, response.clone());
+        return response;
+      }
+      return await caches.match(request) || response;
+    } catch {
+      return await caches.match(request) || await caches.match('./index.html');
     }
-    return response;
-  }).catch(() => caches.match('./index.html'))));
+  })());
 });

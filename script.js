@@ -16,8 +16,8 @@
     ['ブラジリアンスクワット', 20, 3], ['足上げ腹筋', 20, 3], ['仰向けお尻上げ', 15, 3], ['膝立腕立て', 5, 3],
   ];
   const moodChoices = [
-    { value: 1, face: '☁️', label: 'しんどい' }, { value: 2, face: '🌧️', label: 'いまひとつ' },
-    { value: 3, face: '🌤️', label: 'ふつう' }, { value: 4, face: '☀️', label: 'いい感じ' }, { value: 5, face: '✨', label: '最高' },
+    { value: 1, face: '😣', label: 'しんどい' }, { value: 2, face: '😕', label: 'いまひとつ' },
+    { value: 3, face: '😐', label: 'ふつう' }, { value: 4, face: '🙂', label: 'いい感じ' }, { value: 5, face: '😄', label: '最高' },
   ];
   const dateToday = localDate(new Date());
   const state = {
@@ -142,14 +142,32 @@
     data.records[date].updatedAt = new Date().toISOString();
     return data.records[date];
   }
+  function syncTodayMenuRecord() {
+    const record = recordFor(dateToday);
+    if (!record) return false;
+    const current = record.exercises;
+    const existingById = new Map(current.map(item => [item.id, item]));
+    const activeMenus = data.menus.filter(menu => menu.active);
+    const activeIds = new Set(activeMenus.map(menu => menu.id));
+    const updated = activeMenus.map(menu => {
+      const item = existingById.get(menu.id);
+      return item ? { ...item, name: menu.name, reps: menu.reps, targetSets: menu.targetSets } : menuSnapshot(menu);
+    });
+    // Keep a removed exercise on today's record only when it already has logged sets.
+    updated.push(...current.filter(item => !activeIds.has(item.id) && item.sets > 0));
+    const changed = current.length !== updated.length || updated.some((item, index) => {
+      const previous = current[index];
+      return !previous || previous.id !== item.id || previous.name !== item.name || previous.reps !== item.reps || previous.targetSets !== item.targetSets || previous.sets !== item.sets;
+    });
+    if (!changed) return false;
+    record.exercises = updated;
+    record.updatedAt = new Date().toISOString();
+    return true;
+  }
   function exerciseItems(date) {
     const record = recordFor(date);
     if (record) {
-      if (date === dateToday) {
-        const known = new Set(record.exercises.map(item => item.id));
-        const newlyAddedMenus = data.menus.filter(menu => menu.active && !known.has(menu.id)).map(menuSnapshot);
-        if (newlyAddedMenus.length) { record.exercises.push(...newlyAddedMenus); scheduleSave(); }
-      }
+      if (date === dateToday && syncTodayMenuRecord()) scheduleSave();
       return record.exercises;
     }
     return data.menus.filter(menu => menu.active).map(menuSnapshot);
@@ -199,7 +217,6 @@
   function renderToday() {
     const record = recordFor(state.date);
     const isToday = state.date === dateToday;
-    const countSets = record?.exercises.reduce((sum, item) => sum + item.sets, 0) || 0;
     const activeDays = weekActivity(state.date).filter(day => hasWorkout(day.record)).length;
     const streak = getStreak(state.date);
     const items = exerciseItems(state.date);
@@ -219,27 +236,32 @@
         </div>
       </article>`;
     }).join('') : `<div class="empty-state"><strong>まずはメニューをつくりましょう</strong><p>いつもの運動を登録すると、次からはタップで記録できます。</p><button class="button button-primary" type="button" data-view="menus">メニューを登録</button></div>`;
-    const week = weekActivity(state.date).map(day => `<div class="week-day${hasWorkout(day.record) ? ' is-workout' : ''}${day.key === state.date ? ' is-selected' : ''}" aria-label="${formatDate(day.key, { month: 'long', day: 'numeric', weekday: 'long' })}${hasWorkout(day.record) ? ' 運動記録あり' : ''}"><span>${'月火水木金土日'[day.day.getDay() === 0 ? 6 : day.day.getDay() - 1]}</span><i></i></div>`).join('');
+    const week = weekActivity(state.date).map(day => {
+      const choice = moodChoices.find(item => item.value === Number(day.record?.condition));
+      const workout = hasWorkout(day.record);
+      const selected = day.key === state.date;
+      const weekday = '月火水木金土日'[day.day.getDay() === 0 ? 6 : day.day.getDay() - 1];
+      const label = `${formatDate(day.key, { month: 'long', day: 'numeric', weekday: 'long' })}${choice ? `、コンディション ${choice.label}` : '、コンディション未記録'}${workout ? '、運動記録あり' : ''}`;
+      return `<button class="week-day${workout ? ' is-workout' : ''}${selected ? ' is-selected' : ''}" type="button" data-action="open-date" data-date="${day.key}" aria-label="${label}"${selected ? ' aria-current="date"' : ''}><span class="week-label">${weekday}</span><strong class="week-date">${day.day.getDate()}</strong><span class="week-condition" aria-hidden="true">${choice ? choice.face : '·'}</span><i aria-hidden="true"></i></button>`;
+    }).join('');
     const mood = record?.condition || '';
     return `
-      <header class="page-heading">
+      <header class="page-heading page-heading-daily">
         <div><p class="eyebrow">YOUR DAILY RHYTHM</p><h1>${isToday ? '今日の' : `<em>${formatDate(state.date, { month: 'long', day: 'numeric' })}</em>の`}記録</h1><p class="page-subtitle">できたことを、できた分だけ。あなたのペースで続けましょう。</p></div>
         <div class="date-switcher"><button type="button" data-action="date-shift" data-delta="-1" aria-label="前の日">‹</button><input id="selected-date" type="date" value="${state.date}" aria-label="記録する日付"><button type="button" data-action="date-shift" data-delta="1" aria-label="次の日" ${state.date >= dateToday ? 'disabled' : ''}>›</button></div>
       </header>
-      <section class="daily-hero" aria-label="運動習慣のサマリー">
-        <div class="hero-copy"><p class="hero-kicker">${isToday ? 'A LITTLE MOVEMENT, A BETTER DAY' : 'YOUR PERSONAL LOG'}</p><h2 class="hero-title">${hasWorkout(record) ? '今日の自分に、<span>ひとつプラス。</span>' : '小さく動いて、<span>自分を整える。</span>'}</h2><p class="hero-caption">${hasWorkout(record) ? '記録できました。その積み重ねが、あなたのリズムです。' : '休む日も大切な選択。記録はいつでも、思い出したときに。'}</p></div>
-        <div class="hero-art" aria-hidden="true"><div class="hero-orbit"><div class="hero-orbit-inner"></div></div><div class="hero-core"><svg viewBox="0 0 48 48"><path d="M7 28c6.5 0 7.5-13 14-13s7.5 13 14 13M13 34c5.5 0 6.5-8 12-8s6.5 8 12 8"/></svg></div></div>
+      <section class="panel condition-panel" aria-label="今日のコンディション"><div class="condition-heading"><div><p class="eyebrow">HOW ARE YOU?</p><h2>今日のコンディション</h2></div><span>気分をタップ</span></div>
+        <div class="mood-options" role="radiogroup" aria-label="今日の気分">${moodChoices.map(choice => `<label class="mood-option"><input type="radio" name="condition" value="${choice.value}" ${Number(mood) === choice.value ? 'checked' : ''}><span class="mood-face"><b>${choice.face}</b><small>${choice.label}</small></span></label>`).join('')}</div>
       </section>
-      <section class="week-strip" aria-label="今週の運動状況"><div class="week-intro"><strong>今週のリズム</strong><span>${streak ? `現在 ${streak} 日連続で記録中` : '動けた日を、少しずつ'}</span></div><div class="week-days">${week}</div><div class="week-total"><strong>${activeDays}<small> / 7</small></strong><span>運動した日</span></div></section>
+      <section class="week-strip" aria-label="今週の運動とコンディション"><div class="week-intro"><strong>今週のリズム</strong><span>${streak ? `現在 ${streak} 日連続で記録中` : '日付をタップして記録を確認'}</span></div><div class="week-days">${week}</div><div class="week-total"><strong>${activeDays}<small> / 7</small></strong><span>運動した日</span></div></section>
       <div class="daily-grid">
         <section class="panel panel-pad workout-panel"><div class="panel-head"><div><p class="eyebrow">MOVEMENT</p><h2>今日の運動</h2><p>${escapeHtml(menuCountText(record))}</p></div><span class="panel-index">01</span></div>
           <div class="workout-list">${workoutList}</div>
           <div class="workout-toolbar"><span>タップでセットを記録</span><button class="add-exercise" type="button" data-view="menus"><b>＋</b> メニューを編集</button></div>
         </section>
-        <section class="panel wellness-panel"><div class="wellness-top"><div class="panel-head"><div><p class="eyebrow">HOW ARE YOU?</p><h2>今日のコンディション</h2><p>気分も体の声も、気軽に残してみましょう。</p></div><span class="panel-index">02</span></div>
-          <div class="mood-options" role="radiogroup" aria-label="今日の気分">${moodChoices.map(choice => `<label class="mood-option"><input type="radio" name="condition" value="${choice.value}" ${Number(mood) === choice.value ? 'checked' : ''}><span class="mood-face"><b>${choice.face}</b><small>${choice.label}</small></span></label>`).join('')}</div></div>
-          <div class="wellness-fields">
-            <label><span class="field-label">体重 <span>任意</span></span><span class="number-field"><input class="field-input" data-field="weight" type="number" min="20" max="300" step="0.1" inputmode="decimal" placeholder="記録しない日もOK" value="${escapeHtml(record?.weight || '')}" aria-label="体重"><span>kg</span></span></label>
+        <section class="panel wellness-fields-panel"><div class="panel-head"><div><p class="eyebrow">DAILY CHECK-IN</p><h2>体重・睡眠・メモ</h2></div><span class="panel-index">02</span></div>
+          <div class="wellness-fields wellness-fields-compact">
+            <label><span class="field-label">体重 <span>任意</span></span><span class="number-field"><input class="field-input" data-field="weight" type="number" min="20" max="300" step="0.1" inputmode="decimal" placeholder="任意" value="${escapeHtml(record?.weight || '')}" aria-label="体重"><span>kg</span></span></label>
             <label><span class="field-label">睡眠時間 <span>任意</span></span><span class="number-field"><input class="field-input" data-field="sleep" type="number" min="0" max="24" step="0.1" inputmode="decimal" placeholder="例：7.5" value="${escapeHtml(record?.sleep || '')}" aria-label="睡眠時間"><span>時間</span></span></label>
             <label><span class="field-label">ひとことメモ <span>気づいたことを自由に</span></span><textarea class="field-textarea" data-field="note" maxlength="1000" placeholder="体の調子、気分、今日の小さな発見…" aria-label="体調や気分のメモ">${escapeHtml(record?.note || '')}</textarea></label>
             <p id="save-state" class="save-state${storageAvailable ? '' : ' is-error'}" role="status">${storageAvailable ? '入力内容は自動で保存されます' : '端末内への保存に失敗しました'}${storageAvailable ? '' : ' '} ${storageAvailable ? '' : '<button class="text-button" type="button" data-action="retry-save">再試行</button>'}</p>
@@ -354,7 +376,7 @@
     const menus = data.menus.filter(menu => menu.active);
     const list = menus.length ? menus.map((menu, index) => `<article class="menu-card"><span class="menu-index">${String(index + 1).padStart(2, '0')}</span><div><h3 class="menu-name">${escapeHtml(menu.name)}</h3><p class="menu-target">${menu.reps}回 × ${menu.targetSets}セット</p><div class="menu-order-buttons"><button class="icon-button menu-order-button" type="button" data-action="move-menu" data-id="${escapeHtml(menu.id)}" data-delta="-1" aria-label="${escapeHtml(menu.name)}を上へ移動" ${index === 0 ? 'disabled' : ''}>↑ 上へ</button><button class="icon-button menu-order-button" type="button" data-action="move-menu" data-id="${escapeHtml(menu.id)}" data-delta="1" aria-label="${escapeHtml(menu.name)}を下へ移動" ${index === menus.length - 1 ? 'disabled' : ''}>↓ 下へ</button></div></div><div class="menu-actions"><button class="icon-button" type="button" data-action="edit-menu" data-id="${escapeHtml(menu.id)}" aria-label="${escapeHtml(menu.name)}を編集">${pencilIcon()}</button><button class="icon-button" type="button" data-action="delete-menu" data-id="${escapeHtml(menu.id)}" aria-label="${escapeHtml(menu.name)}を削除">${trashIcon()}</button></div></article>`).join('') : '<div class="empty-state"><strong>メニューはまだありません</strong><p>いつもの運動を登録すると、記録がもっと簡単になります。</p></div>';
     return `<header class="menu-toolbar"><div><p class="eyebrow">MAKE IT YOURS</p><h1>いつもの運動を、<br><em>自分らしく。</em></h1><p>あなたの定番メニューを登録。毎日の記録はタップするだけ。</p></div><button class="button button-primary" type="button" data-action="new-menu"><span aria-hidden="true">＋</span> メニューを追加</button></header>
-      <div class="menu-layout"><section class="panel menu-list-panel"><div class="menu-list-head"><h2>登録中のメニュー</h2><span>${menus.length} 件</span></div>${list}</section><aside class="panel menu-aside"><p class="eyebrow">A GENTLE REMINDER</p><h2>メニューは、今の自分に合わせて。</h2><p>回数やセット数はいつでも変更できます。記録済みの日のメニュー名や回数は、その日の状態のまま残ります。</p><div class="aside-rule"></div><div class="aside-tip"><span>↗</span><p>迷ったら、続けやすい回数から始めてみましょう。</p></div></aside></div>`;
+      <div class="menu-layout"><section class="panel menu-list-panel"><div class="menu-list-head"><h2>登録中のメニュー</h2><span>${menus.length} 件</span></div>${list}</section><aside class="panel menu-aside"><p class="eyebrow">A GENTLE REMINDER</p><h2>メニューは、今の自分に合わせて。</h2><p>今日の記録には変更を反映し、過去日の記録は当時の内容のまま残します。</p><div class="aside-rule"></div><div class="aside-tip"><span>↗</span><p>迷ったら、続けやすい回数から始めてみましょう。</p></div></aside></div>`;
   }
   function renderSettings() {
     const recordCount = Object.values(data.records).filter(hasAnyRecord).length;
@@ -398,6 +420,7 @@
     const rank = activeIndices.findIndex(index => data.menus[index].id === menuId); const targetIndex = activeIndices[rank + Number(delta)];
     if (rank < 0 || targetIndex == null) return;
     const sourceIndex = activeIndices[rank]; [data.menus[sourceIndex], data.menus[targetIndex]] = [data.menus[targetIndex], data.menus[sourceIndex]];
+    syncTodayMenuRecord();
     saveData(false); render(); showToast('メニューの並び順を変更しました');
   }
   function syncSelectedDate(date) {
@@ -423,12 +446,16 @@
     if (!menu.name || !menu.reps || !menu.targetSets) return;
     const index = data.menus.findIndex(entry => entry.id === existingId);
     if (index >= 0) data.menus[index] = menu; else data.menus.push(menu);
-    saveData(false); closeDialog(); render(); showToast(index >= 0 ? 'メニューを更新しました' : 'メニューを追加しました');
+    const todayUpdated = syncTodayMenuRecord();
+    saveData(false); closeDialog(); render();
+    showToast(todayUpdated ? 'メニューと今日の記録を更新しました' : index >= 0 ? 'メニューを更新しました' : 'メニューを追加しました');
   }
   function removeMenu(menuId) {
     const menu = data.menus.find(item => item.id === menuId); if (!menu) return;
     if (!confirm(`「${menu.name}」をメニューから削除しますか？\nこれまでの記録には残ります。`)) return;
-    data.menus = data.menus.filter(item => item.id !== menuId); saveData(false); render(); showToast('メニューを削除しました');
+    data.menus = data.menus.filter(item => item.id !== menuId);
+    syncTodayMenuRecord();
+    saveData(false); render(); showToast('メニューを削除しました');
   }
   function updateWellness(target) {
     const record = ensureRecord(state.date);

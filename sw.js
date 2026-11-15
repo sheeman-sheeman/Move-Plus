@@ -1,4 +1,4 @@
-const CACHE_NAME = 'move-plus-shell-v3';
+const CACHE_NAME = 'move-plus-shell-v4';
 const APP_FILES = ['./', './index.html', './style.css', './script.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {

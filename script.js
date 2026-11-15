@@ -229,8 +229,7 @@
         if (saved) return date === dateToday && menu ? { ...saved, name: menu.name, reps: menu.reps, targetSets: menu.targetSets } : saved;
         return menu ? menuSnapshot(menu) : null;
       }).filter(Boolean);
-      const activeIds = new Set(data.menus.filter(menu => menu.active).map(menu => menu.id));
-      items.push(...record.exercises.filter(item => !activeIds.has(item.id) && item.sets > 0 && !planIds.includes(item.id)));
+      items.push(...record.exercises.filter(item => item.sets > 0 && !planIds.includes(item.id)));
       return items;
     }
     const plan = planForId(defaultPlanIdFor(date));

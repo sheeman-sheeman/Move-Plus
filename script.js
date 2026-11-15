@@ -19,6 +19,10 @@
     { value: 1, face: '😣', label: 'しんどい' }, { value: 2, face: '😕', label: 'いまひとつ' },
     { value: 3, face: '😐', label: 'ふつう' }, { value: 4, face: '🙂', label: 'いい感じ' }, { value: 5, face: '😄', label: '最高' },
   ];
+  const routineDefinitions = [
+    { id: 'routine-a', name: 'Aメニュー' }, { id: 'routine-b', name: 'Bメニュー' }, { id: 'routine-c', name: 'Cメニュー' },
+  ];
+  const weekdayOrder = [1, 2, 3, 4, 5, 6, 0];
   const dateToday = localDate(new Date());
   const state = {
     view: 'today', date: dateToday, reviewMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
@@ -39,6 +43,11 @@
   function clampInt(value, min, max) { return Math.min(max, Math.max(min, Math.round(Number(value) || 0))); }
   function freshMenus() { return []; }
   function legacyMenus() { return starterMenus.map(([name, reps, targetSets]) => ({ id: id(), name, reps, targetSets, active: true })); }
+  function defaultPlans(menus = []) {
+    const activeIds = menus.filter(menu => menu.active !== false).map(menu => menu.id);
+    return routineDefinitions.map((routine, index) => ({ ...routine, exerciseIds: index === 0 ? [...activeIds] : [] }));
+  }
+  function defaultWeekdayPlans() { return Object.fromEntries(Array.from({ length: 7 }, (_, day) => [day, 'routine-a'])); }
   function normalizeExercise(item) {
     return {
       id: String(item.id || item.templateId || id()),
@@ -56,11 +65,14 @@
       weight: record.weight == null || record.weight === '' ? '' : String(record.weight),
       sleep: record.sleep == null || record.sleep === '' ? '' : String(record.sleep),
       note: String(record.note || '').slice(0, 1000),
+      menuPlanId: Object.prototype.hasOwnProperty.call(record, 'menuPlanId') ? (record.menuPlanId == null ? null : String(record.menuPlanId)) : 'routine-a',
+      planExerciseIds: Array.isArray(record.planExerciseIds) ? [...new Set(record.planExerciseIds.map(String))] : null,
       updatedAt: record.updatedAt || null,
     };
   }
-  function emptyRecord(menus = data.menus) {
-    return { exercises: menus.filter(menu => menu.active !== false).map(menu => ({ id: menu.id, name: menu.name, reps: menu.reps, targetSets: menu.targetSets, sets: 0 })), condition: null, weight: '', sleep: '', note: '', updatedAt: null };
+  function emptyRecord(menus = [], menuPlanId = 'routine-a') {
+    const exercises = menus.filter(menu => menu.active !== false).map(menu => ({ id: menu.id, name: menu.name, reps: menu.reps, targetSets: menu.targetSets, sets: 0 }));
+    return { exercises, condition: null, weight: '', sleep: '', note: '', menuPlanId, planExerciseIds: exercises.map(item => item.id), updatedAt: null };
   }
   function normalizeData(raw) {
     if (!raw || typeof raw !== 'object') return null;
@@ -69,11 +81,35 @@
       reps: clampInt(menu.reps, 1, 999) || 1, targetSets: clampInt(menu.targetSets, 1, 30) || 1,
       active: menu.active !== false,
     })) : freshMenus();
+    const defaults = defaultPlans(menus);
+    const activeIds = new Set(menus.filter(menu => menu.active).map(menu => menu.id));
+    const plans = defaults.map(fallback => {
+      const saved = Array.isArray(raw.plans) ? raw.plans.find(plan => plan?.id === fallback.id) : null;
+      const exerciseIds = Array.isArray(saved?.exerciseIds) ? saved.exerciseIds.map(String).filter(menuId => activeIds.has(menuId)) : fallback.exerciseIds;
+      return { ...fallback, exerciseIds: [...new Set(exerciseIds)] };
+    });
+    const routineIds = new Set(plans.map(plan => plan.id));
+    const weekdayPlans = defaultWeekdayPlans();
+    for (let weekday = 0; weekday < 7; weekday++) {
+      if (!Object.prototype.hasOwnProperty.call(raw.weekdayPlans || {}, weekday)) continue;
+      const selected = raw.weekdayPlans[weekday];
+      weekdayPlans[weekday] = selected === 'rest' || routineIds.has(selected) ? selected : 'rest';
+    }
     const records = {};
     if (raw.records && typeof raw.records === 'object' && !Array.isArray(raw.records)) {
-      for (const [date, record] of Object.entries(raw.records)) if (/^\d{4}-\d{2}-\d{2}$/.test(date) && record && typeof record === 'object') records[date] = normalizeRecord(record);
+      for (const [date, record] of Object.entries(raw.records)) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !record || typeof record !== 'object') continue;
+        const normalized = normalizeRecord(record);
+        if (normalized.menuPlanId != null && normalized.menuPlanId !== 'rest' && !routineIds.has(normalized.menuPlanId)) normalized.menuPlanId = 'routine-a';
+        if (!normalized.planExerciseIds) {
+          const selectedId = normalized.menuPlanId == null ? weekdayPlans[dateFromKey(date).getDay()] : normalized.menuPlanId;
+          const plan = plans.find(item => item.id === selectedId) || plans[0];
+          normalized.planExerciseIds = normalized.exercises.length ? normalized.exercises.map(item => item.id) : [...(plan?.exerciseIds || [])];
+        }
+        records[date] = normalized;
+      }
     }
-    return { schemaVersion: 1, menus, records, preferences: { theme: raw.preferences?.theme === 'dark' ? 'dark' : 'light' } };
+    return { schemaVersion: 2, menus, plans, weekdayPlans, records, preferences: { theme: raw.preferences?.theme === 'dark' ? 'dark' : 'light' } };
   }
   function migrateLegacy() {
     const oldSets = readJson(OLD_SET_KEY);
@@ -98,13 +134,13 @@
         records[date] = record;
       }
     }
-    return { schemaVersion: 1, menus, records, preferences: { theme: 'light' } };
+    return { schemaVersion: 2, menus, plans: defaultPlans(menus), weekdayPlans: defaultWeekdayPlans(), records, preferences: { theme: 'light' } };
   }
   function readJson(key) {
     try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : null; } catch { return null; }
   }
   const data = normalizeData(readJson(STORAGE_KEY)) || migrateLegacy() || {
-    schemaVersion: 1, menus: freshMenus(), records: {}, preferences: { theme: 'light' },
+    schemaVersion: 2, menus: freshMenus(), plans: defaultPlans(), weekdayPlans: defaultWeekdayPlans(), records: {}, preferences: { theme: 'light' },
   };
   let storageAvailable = true;
 
@@ -133,12 +169,23 @@
       if (isError) { const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'text-button'; retry.dataset.action = 'retry-save'; retry.textContent = '再試行'; node.append(' ', retry); }
     }
   }
+  function defaultPlanIdFor(date) { return data.weekdayPlans[dateFromKey(date).getDay()] || 'rest'; }
+  function planForId(planId) { return data.plans.find(plan => plan.id === planId) || null; }
+  function selectedPlanId(date, record = recordFor(date)) {
+    return record && record.menuPlanId != null && record.menuPlanId !== '' ? record.menuPlanId : defaultPlanIdFor(date);
+  }
+  function createDayRecord(date) {
+    const planId = defaultPlanIdFor(date);
+    const plan = planForId(planId);
+    const menus = plan ? data.menus.filter(menu => menu.active && plan.exerciseIds.includes(menu.id)) : [];
+    return emptyRecord(menus, null);
+  }
   function recordFor(date, create = false) {
-    if (!data.records[date] && create) data.records[date] = emptyRecord();
+    if (!data.records[date] && create) data.records[date] = createDayRecord(date);
     return data.records[date] || null;
   }
   function ensureRecord(date) {
-    if (!data.records[date]) data.records[date] = emptyRecord();
+    if (!data.records[date]) data.records[date] = createDayRecord(date);
     data.records[date].updatedAt = new Date().toISOString();
     return data.records[date];
   }
@@ -147,19 +194,25 @@
     if (!record) return false;
     const current = record.exercises;
     const existingById = new Map(current.map(item => [item.id, item]));
-    const activeMenus = data.menus.filter(menu => menu.active);
-    const activeIds = new Set(activeMenus.map(menu => menu.id));
-    const updated = activeMenus.map(menu => {
+    const followsWeekday = record.menuPlanId == null;
+    const planId = selectedPlanId(dateToday, record);
+    const plan = planForId(planId);
+    const planExerciseIds = plan?.exerciseIds || [];
+    const updated = planExerciseIds.map(menuId => {
+      const menu = data.menus.find(item => item.id === menuId && item.active);
+      if (!menu) return null;
       const item = existingById.get(menu.id);
       return item ? { ...item, name: menu.name, reps: menu.reps, targetSets: menu.targetSets } : menuSnapshot(menu);
-    });
-    // Keep a removed exercise on today's record only when it already has logged sets.
-    updated.push(...current.filter(item => !activeIds.has(item.id) && item.sets > 0));
-    const changed = current.length !== updated.length || updated.some((item, index) => {
+    }).filter(Boolean);
+    const planIds = new Set(planExerciseIds);
+    updated.push(...current.filter(item => !planIds.has(item.id) && item.sets > 0));
+    const changed = (!followsWeekday && record.menuPlanId !== planId) || record.planExerciseIds.length !== planExerciseIds.length || planExerciseIds.some((menuId, index) => record.planExerciseIds[index] !== menuId) || current.length !== updated.length || updated.some((item, index) => {
       const previous = current[index];
       return !previous || previous.id !== item.id || previous.name !== item.name || previous.reps !== item.reps || previous.targetSets !== item.targetSets || previous.sets !== item.sets;
     });
     if (!changed) return false;
+    record.menuPlanId = followsWeekday ? null : planId;
+    record.planExerciseIds = [...planExerciseIds];
     record.exercises = updated;
     record.updatedAt = new Date().toISOString();
     return true;
@@ -168,9 +221,20 @@
     const record = recordFor(date);
     if (record) {
       if (date === dateToday && syncTodayMenuRecord()) scheduleSave();
-      return record.exercises;
+      const planIds = Array.isArray(record.planExerciseIds) ? record.planExerciseIds : (planForId(selectedPlanId(date, record))?.exerciseIds || []);
+      const byId = new Map(record.exercises.map(item => [item.id, item]));
+      const items = planIds.map(menuId => {
+        const saved = byId.get(menuId);
+        const menu = data.menus.find(item => item.id === menuId && item.active);
+        if (saved) return date === dateToday && menu ? { ...saved, name: menu.name, reps: menu.reps, targetSets: menu.targetSets } : saved;
+        return menu ? menuSnapshot(menu) : null;
+      }).filter(Boolean);
+      const activeIds = new Set(data.menus.filter(menu => menu.active).map(menu => menu.id));
+      items.push(...record.exercises.filter(item => !activeIds.has(item.id) && item.sets > 0 && !planIds.includes(item.id)));
+      return items;
     }
-    return data.menus.filter(menu => menu.active).map(menuSnapshot);
+    const plan = planForId(defaultPlanIdFor(date));
+    return plan ? data.menus.filter(menu => menu.active && plan.exerciseIds.includes(menu.id)).map(menuSnapshot) : [];
   }
   function hasWorkout(record) { return Boolean(record?.exercises?.some(item => item.sets > 0)); }
   function hasWellness(record) { return Boolean(record && (record.condition || record.weight || record.sleep || record.note.trim())); }
@@ -220,6 +284,14 @@
     const activeDays = weekActivity(state.date).filter(day => hasWorkout(day.record)).length;
     const streak = getStreak(state.date);
     const items = exerciseItems(state.date);
+    const weekdayPlanId = defaultPlanIdFor(state.date);
+    const activePlanId = selectedPlanId(state.date, record);
+    const weekdayPlan = planForId(weekdayPlanId);
+    const planSelection = activePlanId === weekdayPlanId ? 'weekday' : activePlanId;
+    const restOption = weekdayPlanId === 'rest' ? '' : `<option value="rest" ${planSelection === 'rest' ? 'selected' : ''}>今日は休みにする</option>`;
+    const alternativePlans = data.plans.filter(plan => plan.id !== weekdayPlanId).map(plan => `<option value="${plan.id}" ${planSelection === plan.id ? 'selected' : ''}>${escapeHtml(plan.name)}</option>`).join('');
+    const planOptions = `<option value="weekday" ${planSelection === 'weekday' ? 'selected' : ''}>曜日の設定（${escapeHtml(weekdayPlan?.name || '休み')}）</option>${restOption}${alternativePlans}`;
+    const currentPlanName = activePlanId === 'rest' ? '休み' : planForId(activePlanId)?.name || 'メニュー';
     const workoutList = items.length ? items.map((item, index) => {
       const ratio = Math.min(100, item.targetSets ? item.sets / item.targetSets * 100 : 0);
       const done = item.sets > 0;
@@ -235,7 +307,7 @@
           ${item.sets < item.targetSets ? `<button class="target-button" type="button" data-action="complete-target" data-id="${escapeHtml(item.id)}">目標まで</button>` : ''}
         </div>
       </article>`;
-    }).join('') : `<div class="empty-state"><strong>まずはメニューをつくりましょう</strong><p>いつもの運動を登録すると、次からはタップで記録できます。</p><button class="button button-primary" type="button" data-view="menus">メニューを登録</button></div>`;
+    }).join('') : `<div class="empty-state"><strong>${activePlanId === 'rest' ? '今日は休養日に設定しています' : data.menus.some(menu => menu.active) ? `${escapeHtml(currentPlanName)}に種目がありません` : 'まずはメニューをつくりましょう'}</strong><p>${activePlanId === 'rest' ? '別のメニューに変えると、いつもの運動を記録できます。' : data.menus.some(menu => menu.active) ? 'メニュー画面で、このプランに入れる種目を選んでください。' : 'いつもの運動を登録すると、次からはタップで記録できます。'}</p>${!data.menus.some(menu => menu.active) ? '<button class="button button-primary" type="button" data-view="menus">メニューを登録</button>' : ''}</div>`;
     const week = weekActivity(state.date).map(day => {
       const choice = moodChoices.find(item => item.value === Number(day.record?.condition));
       const workout = hasWorkout(day.record);
@@ -255,7 +327,8 @@
       </section>
       <section class="week-strip" aria-label="今週の運動とコンディション"><div class="week-intro"><strong>今週のリズム</strong><span>${streak ? `現在 ${streak} 日連続で記録中` : '日付をタップして記録を確認'}</span></div><div class="week-days">${week}</div><div class="week-total"><strong>${activeDays}<small> / 7</small></strong><span>運動した日</span></div></section>
       <div class="daily-grid">
-        <section class="panel panel-pad workout-panel"><div class="panel-head"><div><p class="eyebrow">MOVEMENT</p><h2>今日の運動</h2><p>${escapeHtml(menuCountText(record))}</p></div><span class="panel-index">01</span></div>
+        <section class="panel panel-pad workout-panel"><div class="panel-head"><div><p class="eyebrow">MOVEMENT</p><h2>今日の運動</h2><p>${escapeHtml(menuCountText(record ? { ...record, exercises: items } : null))}</p></div><span class="panel-index">01</span></div>
+          <label class="day-plan-picker"><span>この日のメニュー</span><select data-day-plan aria-label="この日の運動メニュー">${planOptions}</select></label>
           <div class="workout-list">${workoutList}</div>
           <div class="workout-toolbar"><span>タップでセットを記録</span><button class="add-exercise" type="button" data-view="menus"><b>＋</b> メニューを編集</button></div>
         </section>
@@ -375,8 +448,19 @@
   function renderMenus() {
     const menus = data.menus.filter(menu => menu.active);
     const list = menus.length ? menus.map((menu, index) => `<article class="menu-card"><span class="menu-index">${String(index + 1).padStart(2, '0')}</span><div><h3 class="menu-name">${escapeHtml(menu.name)}</h3><p class="menu-target">${menu.reps}回 × ${menu.targetSets}セット</p><div class="menu-order-buttons"><button class="icon-button menu-order-button" type="button" data-action="move-menu" data-id="${escapeHtml(menu.id)}" data-delta="-1" aria-label="${escapeHtml(menu.name)}を上へ移動" ${index === 0 ? 'disabled' : ''}>↑ 上へ</button><button class="icon-button menu-order-button" type="button" data-action="move-menu" data-id="${escapeHtml(menu.id)}" data-delta="1" aria-label="${escapeHtml(menu.name)}を下へ移動" ${index === menus.length - 1 ? 'disabled' : ''}>↓ 下へ</button></div></div><div class="menu-actions"><button class="icon-button" type="button" data-action="edit-menu" data-id="${escapeHtml(menu.id)}" aria-label="${escapeHtml(menu.name)}を編集">${pencilIcon()}</button><button class="icon-button" type="button" data-action="delete-menu" data-id="${escapeHtml(menu.id)}" aria-label="${escapeHtml(menu.name)}を削除">${trashIcon()}</button></div></article>`).join('') : '<div class="empty-state"><strong>メニューはまだありません</strong><p>いつもの運動を登録すると、記録がもっと簡単になります。</p></div>';
+    const routineCards = data.plans.map((plan, index) => {
+      const letter = ['A', 'B', 'C'][index];
+      const selectedCount = plan.exerciseIds.filter(menuId => menus.some(menu => menu.id === menuId)).length;
+      const exerciseOptions = menus.length ? menus.map(menu => `<label class="routine-exercise-choice"><input type="checkbox" data-plan-exercise data-plan-id="${plan.id}" data-menu-id="${escapeHtml(menu.id)}" ${plan.exerciseIds.includes(menu.id) ? 'checked' : ''}><span>${escapeHtml(menu.name)}</span><small>${menu.reps}回 × ${menu.targetSets}</small></label>`).join('') : '<p class="routine-empty">種目を登録すると、ここから選べます。</p>';
+      return `<section class="routine-card"><header><span class="routine-letter">${letter}</span><div><h3>${escapeHtml(plan.name)}</h3><p>${selectedCount}種目を設定中</p></div></header><div class="routine-exercise-list">${exerciseOptions}</div></section>`;
+    }).join('');
+    const weekdaySettings = weekdayOrder.map(weekday => {
+      const value = data.weekdayPlans[weekday] || 'rest';
+      return `<label class="weekday-plan-choice"><span>${'日月火水木金土'[weekday]}</span><select data-weekday-plan="${weekday}" aria-label="${'日月火水木金土'[weekday]}曜日の既定メニュー">${data.plans.map(plan => `<option value="${plan.id}" ${value === plan.id ? 'selected' : ''}>${escapeHtml(plan.name)}</option>`).join('')}<option value="rest" ${value === 'rest' ? 'selected' : ''}>休み</option></select></label>`;
+    }).join('');
     return `<header class="menu-toolbar"><div><p class="eyebrow">MAKE IT YOURS</p><h1>いつもの運動を、<br><em>自分らしく。</em></h1><p>あなたの定番メニューを登録。毎日の記録はタップするだけ。</p></div><button class="button button-primary" type="button" data-action="new-menu"><span aria-hidden="true">＋</span> メニューを追加</button></header>
-      <div class="menu-layout"><section class="panel menu-list-panel"><div class="menu-list-head"><h2>登録中のメニュー</h2><span>${menus.length} 件</span></div>${list}</section><aside class="panel menu-aside"><p class="eyebrow">A GENTLE REMINDER</p><h2>メニューは、今の自分に合わせて。</h2><p>今日の記録には変更を反映し、過去日の記録は当時の内容のまま残します。</p><div class="aside-rule"></div><div class="aside-tip"><span>↗</span><p>迷ったら、続けやすい回数から始めてみましょう。</p></div></aside></div>`;
+      <section class="panel routine-settings-panel"><div class="routine-settings-heading"><div><p class="eyebrow">PLAN YOUR RHYTHM</p><h2>3つのメニュー構成</h2><p>種目をA・B・Cに分けて、その日の気分や予定に合わせて使い分けます。</p></div></div><div class="routine-grid">${routineCards}</div><div class="weekday-defaults"><div class="weekday-defaults-heading"><h3>曜日ごとの既定メニュー</h3><p>記録画面で、その日だけ別のメニューにも切り替えられます。</p></div><div class="weekday-plan-grid">${weekdaySettings}</div></div></section>
+      <div class="menu-layout"><section class="panel menu-list-panel"><div class="menu-list-head"><h2>登録中の運動種目</h2><span>${menus.length} 件</span></div>${list}</section><aside class="panel menu-aside"><p class="eyebrow">A GENTLE REMINDER</p><h2>無理のない形を選ぶ。</h2><p>種目を登録したら、3つの構成から曜日ごとの既定メニューを設定できます。その日だけ別の構成にも切り替えられます。</p><div class="aside-rule"></div><div class="aside-tip"><span>↗</span><p>メニューを追加すると、初期設定ではAメニューに加わります。</p></div></aside></div>`;
   }
   function renderSettings() {
     const recordCount = Object.values(data.records).filter(hasAnyRecord).length;
@@ -420,8 +504,59 @@
     const rank = activeIndices.findIndex(index => data.menus[index].id === menuId); const targetIndex = activeIndices[rank + Number(delta)];
     if (rank < 0 || targetIndex == null) return;
     const sourceIndex = activeIndices[rank]; [data.menus[sourceIndex], data.menus[targetIndex]] = [data.menus[targetIndex], data.menus[sourceIndex]];
+    data.plans.forEach(plan => { plan.exerciseIds = data.menus.filter(menu => menu.active && plan.exerciseIds.includes(menu.id)).map(menu => menu.id); });
     syncTodayMenuRecord();
     saveData(false); render(); showToast('メニューの並び順を変更しました');
+  }
+  function seedRecordPlan(record, planId, followsWeekday = false) {
+    const plan = planForId(planId);
+    const planExerciseIds = plan ? [...plan.exerciseIds] : [];
+    const existingIds = new Set(record.exercises.map(item => item.id));
+    planExerciseIds.forEach(menuId => {
+      const menu = data.menus.find(item => item.id === menuId && item.active);
+      if (menu && !existingIds.has(menuId)) record.exercises.push(menuSnapshot(menu));
+    });
+    record.menuPlanId = followsWeekday ? null : planId;
+    record.planExerciseIds = planExerciseIds;
+    record.updatedAt = new Date().toISOString();
+  }
+  function updateDayPlan(value) {
+    const weekdayPlanId = defaultPlanIdFor(state.date);
+    const followsWeekday = value === 'weekday';
+    const planId = followsWeekday ? weekdayPlanId : value === 'rest' || data.plans.some(plan => plan.id === value) ? value : 'rest';
+    const record = ensureRecord(state.date);
+    seedRecordPlan(record, planId, followsWeekday);
+    if (state.date === dateToday) syncTodayMenuRecord();
+    saveData(false); render();
+    showToast(planId === 'rest' ? '今日は休みに設定しました' : `${planForId(planId)?.name || 'メニュー'}に切り替えました`);
+  }
+  function updateWeekdayPlan(target) {
+    const weekday = Number(target.dataset.weekdayPlan);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) return;
+    const planId = target.value === 'rest' || data.plans.some(plan => plan.id === target.value) ? target.value : 'rest';
+    const previousPlanId = data.weekdayPlans[weekday] || 'rest';
+    if (planId === previousPlanId) return;
+    for (const [date, record] of Object.entries(data.records)) {
+      if (date < dateToday && dateFromKey(date).getDay() === weekday && record.menuPlanId == null) {
+        record.menuPlanId = previousPlanId;
+        record.updatedAt = new Date().toISOString();
+      }
+    }
+    data.weekdayPlans[weekday] = planId;
+    if (dateFromKey(dateToday).getDay() === weekday) syncTodayMenuRecord();
+    saveData(false); render();
+    showToast(`${'日月火水木金土'[weekday]}曜日の既定メニューを設定しました`);
+  }
+  function updatePlanExercise(target) {
+    const plan = data.plans.find(item => item.id === target.dataset.planId);
+    const menuId = target.dataset.menuId;
+    if (!plan || !data.menus.some(menu => menu.active && menu.id === menuId)) return;
+    const selected = new Set(plan.exerciseIds);
+    if (target.checked) selected.add(menuId); else selected.delete(menuId);
+    plan.exerciseIds = data.menus.filter(menu => menu.active && selected.has(menu.id)).map(menu => menu.id);
+    syncTodayMenuRecord();
+    saveData(false); render();
+    showToast(`${plan.name}を更新しました`);
   }
   function syncSelectedDate(date) {
     state.date = date; state.reviewDate = date; const selected = dateFromKey(date);
@@ -445,7 +580,12 @@
     const menu = { id: existingId || id(), name: String(formData.get('name') || '').trim(), reps: clampInt(formData.get('reps'), 1, 999), targetSets: clampInt(formData.get('targetSets'), 1, 30), active: true };
     if (!menu.name || !menu.reps || !menu.targetSets) return;
     const index = data.menus.findIndex(entry => entry.id === existingId);
-    if (index >= 0) data.menus[index] = menu; else data.menus.push(menu);
+    if (index >= 0) data.menus[index] = menu;
+    else {
+      data.menus.push(menu);
+      const routineA = planForId('routine-a');
+      if (routineA && !routineA.exerciseIds.includes(menu.id)) routineA.exerciseIds.push(menu.id);
+    }
     const todayUpdated = syncTodayMenuRecord();
     saveData(false); closeDialog(); render();
     showToast(todayUpdated ? 'メニューと今日の記録を更新しました' : index >= 0 ? 'メニューを更新しました' : 'メニューを追加しました');
@@ -454,6 +594,7 @@
     const menu = data.menus.find(item => item.id === menuId); if (!menu) return;
     if (!confirm(`「${menu.name}」をメニューから削除しますか？\nこれまでの記録には残ります。`)) return;
     data.menus = data.menus.filter(item => item.id !== menuId);
+    data.plans.forEach(plan => { plan.exerciseIds = plan.exerciseIds.filter(id => id !== menuId); });
     syncTodayMenuRecord();
     saveData(false); render(); showToast('メニューを削除しました');
   }
@@ -480,7 +621,7 @@
         if (!raw || !Array.isArray(raw.menus) || !raw.records || typeof raw.records !== 'object' || Array.isArray(raw.records)) throw new Error('format');
         const incoming = normalizeData(raw);
         if (!confirm('現在の記録を読み込んだデータで置き換えます。続けますか？')) return;
-        data.schemaVersion = incoming.schemaVersion; data.menus = incoming.menus; data.records = incoming.records; data.preferences = incoming.preferences;
+        data.schemaVersion = incoming.schemaVersion; data.menus = incoming.menus; data.plans = incoming.plans; data.weekdayPlans = incoming.weekdayPlans; data.records = incoming.records; data.preferences = incoming.preferences;
         saveData(false); render(); showToast('バックアップを読み込みました');
       } catch { showToast('このJSONファイルは読み込めませんでした', true); }
       $('#import-file').value = '';
@@ -490,7 +631,7 @@
   }
   function resetData() {
     if (!confirm('この端末に保存した運動メニューと記録をすべて削除します。この操作は元に戻せません。\n続ける前に必要なデータをバックアップしてください。')) return;
-    data.menus = freshMenus(); data.records = {}; data.preferences = { theme: 'light' }; saveData(false); render(); showToast('記録をリセットしました');
+    data.menus = freshMenus(); data.plans = defaultPlans(); data.weekdayPlans = defaultWeekdayPlans(); data.records = {}; data.preferences = { theme: 'light' }; saveData(false); render(); showToast('記録をリセットしました');
   }
   function shiftDate(delta) {
     const date = dateFromKey(state.date); date.setDate(date.getDate() + Number(delta)); const key = localDate(date);
@@ -533,6 +674,9 @@
     if (input.matches('[data-field]') && ['weight', 'sleep', 'note'].includes(input.dataset.field)) updateWellness(input);
   });
   document.addEventListener('change', event => {
+    if (event.target.matches('[data-day-plan]')) { updateDayPlan(event.target.value); return; }
+    if (event.target.matches('[data-weekday-plan]')) { updateWeekdayPlan(event.target); return; }
+    if (event.target.matches('[data-plan-exercise]')) { updatePlanExercise(event.target); return; }
     if (event.target.matches('input[name="condition"]')) { updateWellness(event.target); showToast('気分を記録しました'); }
     if (event.target.matches('#selected-date')) {
       if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value) && event.target.value <= dateToday) { syncSelectedDate(event.target.value); render(); }

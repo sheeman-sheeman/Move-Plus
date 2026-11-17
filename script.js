@@ -319,14 +319,14 @@
     return `
       <header class="page-heading page-heading-daily">
         <div><p class="eyebrow">YOUR DAILY RHYTHM</p><h1>${isToday ? '今日の' : `<em>${formatDate(state.date, { month: 'long', day: 'numeric' })}</em>の`}記録</h1><p class="page-subtitle">できたことを、できた分だけ。あなたのペースで続けましょう。</p></div>
-        <div class="date-switcher"><button type="button" data-action="date-shift" data-delta="-1" aria-label="前の日">‹</button><input id="selected-date" type="date" value="${state.date}" aria-label="記録する日付"><button type="button" data-action="date-shift" data-delta="1" aria-label="次の日" ${state.date >= dateToday ? 'disabled' : ''}>›</button></div>
+        <div class="date-switcher"><button type="button" data-action="date-shift" data-delta="-1" aria-label="前の日">‹</button><input id="selected-date" type="date" value="${state.date}" aria-label="記録する日付"><button type="button" data-action="date-shift" data-delta="1" aria-label="次の日">›</button></div>
       </header>
-      <section class="panel condition-panel" aria-label="今日のコンディション"><div class="condition-heading"><div><p class="eyebrow">HOW ARE YOU?</p><h2>今日のコンディション</h2></div><span>気分をタップ</span></div>
-        <div class="mood-options" role="radiogroup" aria-label="今日の気分">${moodChoices.map(choice => `<label class="mood-option"><input type="radio" name="condition" value="${choice.value}" ${Number(mood) === choice.value ? 'checked' : ''}><span class="mood-face"><b>${choice.face}</b><small>${choice.label}</small></span></label>`).join('')}</div>
+      <section class="panel condition-panel" aria-label="${isToday ? '今日' : 'この日'}のコンディション"><div class="condition-heading"><div><p class="eyebrow">HOW ARE YOU?</p><h2>${isToday ? '今日' : 'この日'}のコンディション</h2></div><span>気分をタップ</span></div>
+        <div class="mood-options" role="radiogroup" aria-label="${isToday ? '今日' : 'この日'}の気分">${moodChoices.map(choice => `<label class="mood-option"><input type="radio" name="condition" value="${choice.value}" ${Number(mood) === choice.value ? 'checked' : ''}><span class="mood-face"><b>${choice.face}</b><small>${choice.label}</small></span></label>`).join('')}</div>
       </section>
-      <section class="week-strip" aria-label="今週の運動とコンディション"><div class="week-intro"><strong>今週のリズム</strong><span>${streak ? `現在 ${streak} 日連続で記録中` : '日付をタップして記録を確認'}</span></div><div class="week-days">${week}</div><div class="week-total"><strong>${activeDays}<small> / 7</small></strong><span>運動した日</span></div></section>
+      <section class="week-strip" aria-label="${isToday ? '今週' : 'この週'}の運動とコンディション"><div class="week-intro"><strong>${isToday ? '今週' : 'この週'}のリズム</strong><span>${streak ? `現在 ${streak} 日連続で記録中` : '日付をタップして記録を確認'}</span></div><div class="week-days">${week}</div><div class="week-total"><strong>${activeDays}<small> / 7</small></strong><span>運動した日</span></div></section>
       <div class="daily-grid">
-        <section class="panel panel-pad workout-panel"><div class="panel-head"><div><p class="eyebrow">MOVEMENT</p><h2>今日の運動</h2><p>${escapeHtml(menuCountText(record ? { ...record, exercises: items } : null))}</p></div><span class="panel-index">01</span></div>
+        <section class="panel panel-pad workout-panel"><div class="panel-head"><div><p class="eyebrow">MOVEMENT</p><h2>${isToday ? '今日' : 'この日'}の運動</h2><p>${escapeHtml(menuCountText(record ? { ...record, exercises: items } : null))}</p></div><span class="panel-index">01</span></div>
           <label class="day-plan-picker"><span>この日のメニュー</span><select data-day-plan aria-label="この日の運動メニュー">${planOptions}</select></label>
           <div class="workout-list">${workoutList}</div>
           <div class="workout-toolbar"><span>タップでセットを記録</span><button class="add-exercise" type="button" data-view="menus"><b>＋</b> メニューを編集</button></div>
@@ -634,7 +634,7 @@
   }
   function shiftDate(delta) {
     const date = dateFromKey(state.date); date.setDate(date.getDate() + Number(delta)); const key = localDate(date);
-    if (key <= dateToday) { syncSelectedDate(key); render(); }
+    syncSelectedDate(key); render();
   }
 
   document.addEventListener('click', event => {
@@ -648,7 +648,7 @@
       case 'date-shift': shiftDate(Number(button.dataset.delta)); break;
       case 'select-review-date': selectReviewDate(button.dataset.date, button.classList.contains('history-entry')); break;
       case 'chart-date': selectReviewDate(button.dataset.date, true); break;
-      case 'open-date': if (button.dataset.date <= dateToday) { syncSelectedDate(button.dataset.date); setView('today'); } break;
+      case 'open-date': if (/^\d{4}-\d{2}-\d{2}$/.test(button.dataset.date)) { syncSelectedDate(button.dataset.date); setView('today'); } break;
       case 'month-shift': { const date = new Date(state.reviewMonth); date.setMonth(date.getMonth() + Number(button.dataset.delta)); state.reviewMonth = date; render(); break; }
       case 'trend-range': state.trendRange = clampInt(button.dataset.range, 7, 90); render(); break;
       case 'trend-metric': state.trendMetric = button.dataset.metric === 'activity' ? 'activity' : 'weight'; render(); break;
@@ -667,7 +667,7 @@
   document.addEventListener('input', event => {
     const input = event.target;
     if (input.id === 'selected-date') {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(input.value) && input.value <= dateToday) { syncSelectedDate(input.value); render(); }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(input.value)) { syncSelectedDate(input.value); render(); }
       return;
     }
     if (input.matches('[data-field]') && ['weight', 'sleep', 'note'].includes(input.dataset.field)) updateWellness(input);
@@ -678,7 +678,7 @@
     if (event.target.matches('[data-plan-exercise]')) { updatePlanExercise(event.target); return; }
     if (event.target.matches('input[name="condition"]')) { updateWellness(event.target); showToast('気分を記録しました'); }
     if (event.target.matches('#selected-date')) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value) && event.target.value <= dateToday) { syncSelectedDate(event.target.value); render(); }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) { syncSelectedDate(event.target.value); render(); }
     }
     if (event.target.matches('#import-file') && event.target.files?.[0]) importData(event.target.files[0]);
   });

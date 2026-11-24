@@ -123,6 +123,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .main-column { min-width: 0; }
 .mobile-header { display: none; }
 .main-content { width: min(100%, 1450px); margin: 0 auto; padding: 45px clamp(24px, 5vw, 78px) 88px; }
+.today-screen { display: contents; }
 .screen-enter { animation: screen-in .45s cubic-bezier(.2,.7,.2,1) both; }
 @keyframes screen-in { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -649,28 +650,43 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .menu-aside .aside-rule { display: none; }
 }
 @media (max-width: 680px) {
-  .main-content { padding: 18px 16px calc(105px + env(safe-area-inset-bottom)); }
+  .main-content { padding: 10px 16px calc(95px + env(safe-area-inset-bottom)); }
+  .today-screen {
+    display: grid;
+    grid-template-columns: minmax(0,1fr);
+    grid-template-areas: "heading" "workout" "condition" "week" "wellness";
+    gap: 9px;
+  }
+  .today-screen > .page-heading-daily { grid-area: heading; margin: 0; }
+  .today-screen > .condition-panel { grid-area: condition; margin: 0; }
+  .today-screen > .week-strip { grid-area: week; margin: 0; }
+  .today-screen > .daily-grid { display: contents; }
+  .today-screen > .daily-grid > .workout-panel { grid-area: workout; padding: 12px 13px; }
+  .today-screen > .daily-grid > .wellness-fields-panel { grid-area: wellness; }
   .page-heading { display: block; margin-bottom: 14px; }
-  .page-heading h1 { font-size: 32px; }
+  .page-heading h1 { font-size: 30px; line-height: 1.12; }
   .page-subtitle { margin-top: 6px; font-size: 11px; }
-  .page-heading-daily { margin-bottom: 11px; }
-  .page-heading-daily .page-subtitle { margin-top: 5px; font-size: 11px; }
-  .date-switcher { margin-top: 10px; }
-  .date-switcher button { width: 37px; height: 37px; }
-  .date-switcher input { height: 37px; }
+  .page-heading-daily { margin-bottom: 0; }
+  .page-heading-daily .eyebrow { margin-bottom: 3px; }
+  .page-heading-daily .page-subtitle { margin-top: 3px; font-size: 11px; line-height: 1.4; }
+  .date-switcher { margin-top: 7px; gap: 6px; }
+  .date-switcher button { width: 36px; height: 36px; }
+  .date-switcher input { height: 36px; }
   .date-switcher input { flex: 1; }
-  .condition-panel { margin-bottom: 10px; padding: 9px 12px; display: block; }
+  .condition-panel { padding: 9px 12px; display: block; }
   .condition-heading { min-width: 0; }
   .condition-heading h2 { font-size: 14px; }
-  .condition-panel .mood-options { max-width: none; margin-top: 5px; gap: 3px; }
-  .condition-panel .mood-face { min-height: 43px; padding: 3px 1px; }
+  .condition-panel .mood-options { max-width: none; margin-top: 4px; gap: 4px; }
+  .condition-panel .mood-face { min-height: 40px; padding: 3px 1px; }
   .condition-panel .mood-face b { font-size: 17px; }
-  .condition-panel .mood-face small { font-size: 8px; }
-  .week-strip { margin: 10px 0 12px; padding: 10px 11px; align-items: flex-start; flex-wrap: wrap; gap: 8px 10px; }
+  .condition-panel .mood-face small { font-size: 9px; }
+  .week-strip { padding: 8px 10px; align-items: flex-start; flex-wrap: wrap; gap: 5px 9px; }
   .week-intro { min-width: 0; flex: 1; }
+  .week-intro span { margin-top: 2px; }
   .week-days { order: 3; width: 100%; flex-basis: 100%; justify-content: space-between; gap: 2px; }
-  .week-day { min-width: 0; width: auto; padding: 4px 0 3px; }
-  .week-total { padding-left: 10px; }
+  .week-day { min-width: 0; width: auto; padding: 2px 0; }
+  .week-condition { min-height: 14px; font-size: 13px; }
+  .week-total { padding-left: 9px; }
   .daily-grid { grid-template-columns: minmax(0,1fr); gap: 10px; }
   .routine-settings-panel { padding: 15px; }
   .routine-grid { grid-auto-columns: minmax(82%, 340px); grid-auto-flow: column; grid-template-columns: none; overflow-x: auto; padding-bottom: 5px; scroll-snap-type: x mandatory; }
@@ -683,6 +699,29 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .day-plan-picker { grid-template-columns: minmax(0,1fr); justify-content: stretch; gap: 5px; }
   .day-plan-picker select { font-size: 12px; }
   .panel-pad { padding: 16px 15px; }
+  .workout-panel .panel-head { margin-bottom: 8px; }
+  .workout-panel .panel-head h2 { font-size: 16px; }
+  .workout-panel .panel-head p { margin-top: 3px; font-size: 11px; line-height: 1.4; }
+  .workout-panel .panel-index { font-size: 17px; }
+  .workout-panel .day-plan-picker { grid-template-columns: auto minmax(0,1fr); margin: 0 0 6px; padding: 5px 8px; gap: 8px; }
+  .workout-panel .day-plan-picker > span { font-size: 11px; }
+  .workout-panel .day-plan-picker select { height: 35px; font-size: 11px; }
+  .workout-panel .workout-row { gap: 7px; padding: 8px 0; }
+  .workout-panel .workout-info { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; column-gap: 8px; }
+  .workout-panel .workout-title-line { grid-column: 1; min-width: 0; }
+  .workout-panel .workout-name { font-size: 14px; }
+  .workout-panel .workout-target { grid-column: 2; margin: 0; font-size: 10px; white-space: nowrap; }
+  .workout-panel .workout-meter { grid-column: 1 / -1; margin: 4px 0 0 15px; gap: 6px; }
+  .workout-panel .remove-set-record { grid-column: 1 / -1; margin: 3px 0 0 15px; }
+  .workout-panel .set-label { font-size: 10px; }
+  .workout-panel .workout-actions { gap: 4px; }
+  .workout-panel .step-button { width: 36px; height: 36px; }
+  .workout-panel .target-button { min-height: 34px; padding-inline: 7px; font-size: 10px; }
+  .workout-panel .empty-state { padding: 17px 12px; }
+  .workout-panel .empty-state p { margin-bottom: 10px; font-size: 12px; }
+  .workout-panel .workout-toolbar { padding-top: 8px; flex-direction: row; align-items: center; gap: 8px; }
+  .workout-panel .workout-toolbar span { font-size: 11px; }
+  .workout-panel .add-exercise { padding: 7px 9px; font-size: 11px; }
   .wellness-fields-panel .panel-head { margin: 14px 15px 4px; }
   .wellness-fields { padding: 11px 15px 15px; gap: 9px; }
   .field-label { margin-bottom: 4px; }
@@ -735,7 +774,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .condition-panel .mood-options { gap: 2px; }
   .condition-panel .mood-face { min-height: 41px; }
   .condition-panel .mood-face b { font-size: 16px; }
-  .condition-panel .mood-face small { font-size: 7px; }
+  .condition-panel .mood-face small { font-size: 9px; }
+  .workout-panel .workout-info { display: block; }
+  .workout-panel .workout-target { margin: 2px 0 0 15px; font-size: 11px; white-space: normal; }
+  .workout-panel .workout-meter { margin: 5px 0 0 15px; }
   .calendar-day { min-height: 40px; }
 }
 @media (prefers-reduced-motion: reduce) {

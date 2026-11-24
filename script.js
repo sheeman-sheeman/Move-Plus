@@ -316,7 +316,7 @@
       return `<button class="week-day${workout ? ' is-workout' : ''}${selected ? ' is-selected' : ''}" type="button" data-action="open-date" data-date="${day.key}" aria-label="${label}"${selected ? ' aria-current="date"' : ''}><span class="week-label">${weekday}</span><strong class="week-date">${day.day.getDate()}</strong><span class="week-condition" aria-hidden="true">${choice ? choice.face : '·'}</span><i aria-hidden="true"></i></button>`;
     }).join('');
     const mood = record?.condition || '';
-    return `
+    return `<div class="today-screen">
       <header class="page-heading page-heading-daily">
         <div><p class="eyebrow">YOUR DAILY RHYTHM</p><h1>${isToday ? '今日の' : `<em>${formatDate(state.date, { month: 'long', day: 'numeric' })}</em>の`}記録</h1><p class="page-subtitle">できたことを、できた分だけ。あなたのペースで続けましょう。</p></div>
         <div class="date-switcher"><button type="button" data-action="date-shift" data-delta="-1" aria-label="前の日">‹</button><input id="selected-date" type="date" value="${state.date}" aria-label="記録する日付"><button type="button" data-action="date-shift" data-delta="1" aria-label="次の日">›</button></div>
@@ -339,7 +339,8 @@
             <p id="save-state" class="save-state${storageAvailable ? '' : ' is-error'}" role="status">${storageAvailable ? '入力内容は自動で保存されます' : '端末内への保存に失敗しました'}${storageAvailable ? '' : ' '} ${storageAvailable ? '' : '<button class="text-button" type="button" data-action="retry-save">再試行</button>'}</p>
           </div>
         </section>
-      </div>`;
+      </div>
+    </div>`;
   }
 
   function renderReview() {
